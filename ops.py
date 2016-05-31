@@ -3,13 +3,19 @@ import tensorflow as tf
 import pdb
 
 # model: softmax(W2*tanh(W1*x)) where x are embeddings
-def model(d_hid, d_emb):
+def model(inputs, params):
+    n = params['gram_size'] - 1 # -1 to get shape of context
+    V = params['vocab_size']
+    d_emb = params['emb_size']
+    d_hid = params['hid_size']
+
     embeddings = tf.Variable(tf.random_uniform([V, d_emb], -1.0, 1.0))
     embeds = tf.nn.embedding_lookup(embeddings, inputs) # will want to load pretrained
+    reshape = tf.reshape(embeds, [-1, n*d_emb], name='reshape') # TODO explore position depedent embs
     with tf.name_scope('linear1'):
-        weights = tf.Variable(tf.random_uniform([d_emb, d_hid], -1.0, 1.0), name='weights')
+        weights = tf.Variable(tf.random_uniform([n*d_emb, d_hid], -1.0, 1.0), name='weights')
         biases = tf.Variable(tf.zeros([d_hid], name='biases'))
-        linear1 = tf.matmul(embeds, weights)+biases
+        linear1 = tf.matmul(reshape, weights)+biases
     activation = tf.nn.tanh(linear1)
     with tf.name_scope('linear2'):
         weights = tf.Variable(tf.random_uniform([d_hid, V], -1.0, 1.0), name='weights')
@@ -33,6 +39,7 @@ def train(loss, learning_rate):
     return train_op
 
 # uses the loss score to compute perplexity
-def validate(cross_entropy):
-    ppl = tf.exp(tf.reduce_mean(cross_entropy, name='ppl'))
+# Note: not really used because need to average loss then take exp
+def validate(loss):
+    ppl = tf.exp(loss, name='ppl')
     return ppl

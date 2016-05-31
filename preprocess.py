@@ -27,6 +27,7 @@ def build_data(txts, word2ind, gram_size):
 
     for i, txt in enumerate(txts):
         words = txt.split()
+        # TODO may want to pad start of comment / end of comment differently
         conv_txt = [word2ind[word] for word in words] # note: data is already padded
         for j in xrange(len(words)-gram_size):
             inputs.append(conv_txt[j:j+gram_size])
@@ -44,7 +45,7 @@ def main(arguments):
     parser.add_argument('--outfile', help='file prefix to write to (hdf5)', type=str)
     # want to potentially save input data as pickle, write vocab
     args = parser.parse_args(arguments)
-    if not args.srcefile or not args.outfile:
+    if not args.srcfile or not args.outfile:
         raise ValueError("srcfile or outfile not provided")
 
     print "Reading in data..."
@@ -64,6 +65,7 @@ def main(arguments):
         f['valid_inputs'] = inputs[split_pt:]
         f['valid_targets'] = targs[split_pt:]
         f['gram_size'] = np.array([args.n], dtype=np.int32)
+        f['vocab_size'] = np.array([len(word2ind)], dtype=np.int32)
 
     with file(args.outfile+'.vocab.hdf5', 'w') as f:
         pickle.dump((word2ind, ind2word), f) 

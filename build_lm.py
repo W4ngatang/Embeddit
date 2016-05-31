@@ -1,36 +1,48 @@
 import numpy as np
 import tensorflow as tf
+import sys
+import argparse
 import h5py
 import pickle
 import pdb
 import time
 import ops
-import data
+import math
+from data import Dataset
 
 def build_data(args):
     datafile = h5py.File(args.datafile, 'r')
-    data = Dataset(datafile, args.batch_size)
-    return data
+    train_inputs = datafile['train_inputs']
+    train_targs = datafile['train_targets']
+    valid_inputs = datafile['valid_inputs']
+    valid_targs = datafile['valid_targets']
+    train = Dataset(train_inputs, train_targs, args.batch_size)
+    valid = Dataset(valid_inputs, valid_targs, args.batch_size)
+    return {'train':train, 'valid':valid}, \
+            {'gram_size':datafile['gram_size'][0], 'vocab_size':datafile['vocab_size'][0], \
+                'hid_size':args.d_hid, 'emb_size':args.d_emb}
 
-def get_feed_dict(data, i, input_p, targ_p):
-    input_b, targ_b = data.batches[i] # implement dataset class
+def get_feed_dict(data, i, input_ph, targ_ph):
+    input_batch, targ_batch = data.batch(i)
 
     feed_dict = {
-        input_p: input_b,
-        tag_p: targ_p,
+        input_ph: input_batch,
+        targ_ph: targ_batch,
     }
     return feed_dict
 
-def train(args):
+def train(args, data, params):
+    train = data['train']
+    valid = data['valid']
 
     with tf.Graph().as_default():
-        input_p = tf.placeholder(tf.int32, shape=[args.batch_size, args.n-1])
-        targ_p = tf.placeholder(tf.int32, shape=[args.batch_size])
+        input_ph = tf.placeholder(tf.int32, shape=[args.batch_size,params['gram_size']-1])
+        targ_ph = tf.placeholder(tf.int32, shape=[args.batch_size])
 
-        scores = ops.model(inputs, args.d_hid, args.d_emb)
-        loss = ops.loss(scores, targs)
+        scores = ops.model(input_ph, params)
+        loss = ops.loss(scores, targ_ph)
         train_op = ops.train(loss, args.learn_rate)
-        valid_op = ops.valid(loss)
+        valid_op = ops.validate(loss)
 
         '''
         summary_op = tf.merge_all_summaries() # TODO read about summaries + savers
@@ -41,41 +53,46 @@ def train(args):
         init = tf.initialize_all_variables() # initialize variables before they can be used
         sess.run(init)
 
-        summary_writer = tf.train.SummaryWriter()
-
-        for epoch in args.nepochs: # NOTE this is steps, not epochs
+        for epoch in xrange(args.nepochs):
+            print "Training epoch %d..." % epoch
             start_time = time.time()
-            for i in xrange(nbatches):
-                feed_dict = get_feed_dict(dataset, i, input_p, targ_p)
-                # build feed dict
+            train_loss = 0.
+            valid_loss = 0.
+            for i in xrange(train.nbatches):
+                train_feed_dict = get_feed_dict(train, i, input_ph, targ_ph)
+                _, batch_loss = sess.run([train_op, loss], feed_dict=train_feed_dict)
+                train_loss += batch_loss
 
-                # if you run loss node, does it not run train as well?
-                _, val_score = sess.run([train_op, loss, valid_op], feed_dict=feed_dict)
+            for i in xrange(valid.nbatches):
+                valid_feed_dict = get_feed_dict(valid, i, input_ph, targ_ph)
+                batch_loss = sess.run([loss], feed_dict=valid_feed_dict)[0]
+                valid_loss += batch_loss
 
             duration = time.time() - start_time
-            print "Epoch %d: loss = %.3f, valid ppl = %.3f; .3f s" % 
-                (epoch, loss_score, val_score, duration)
+            print "\tloss = %.3f, valid ppl = %.3f, %.3f s" % \
+                (math.exp(train_loss/train.nbatches), \
+                    math.exp(valid_loss/valid.nbatches), duration)
 
 def main(arguments):
     parser = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--datafile', help='source data file', type=str)
-    parser.add_argument('--outfile', help='file prefix to write to (hdf5)', type=str)
     parser.add_argument('--batch_size', help='batch_size', type=int)
     parser.add_argument('--learn_rate', help='initial learning rate', type=float)
     parser.add_argument('--nepochs', help='number of epochs to train for', type=int)
+    parser.add_argument('--d_hid', help='hidden layer size', type=int, default=100)
+    parser.add_argument('--d_emb', help='embedding size', type=int, default=300)
     # want to potentially save input data as pickle, write vocab
     args = parser.parse_args(arguments)
-    if not args.srcefile or not args.outfile:
-        raise ValueError("srcfile or outfile not provided")
 
-    # load data
-    data = build_data(args)
+    # load data and model parameters
+    print "Loading data..."
+    d, p = build_data(args)
 
     # train
-    train(args, data)
-
+    print "Beginning training..."
+    train(args, d, p)
          
 if __name__ == '__main__':
     sys.exit(main(sys.argv[1:]))
