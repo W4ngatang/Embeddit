@@ -89,6 +89,7 @@ def main(arguments):
     # load data and model parameters
     print "Loading data..."
     d, p = build_data(args)
+    print "Vocab size: %d" % p['vocab_size']
 
     # train
     print "Beginning training..."
