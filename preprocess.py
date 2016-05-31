@@ -4,21 +4,49 @@ import pickle
 import argparse
 import sys
 import pdb
+from collections import defaultdict
+import re
 
-# TODO UNK filter, need to keep track of freqs
-def build_vocab(txts):
+def is_number(word):
+    try:
+        float(word)
+        return True
+    except ValueError:
+        return False
+
+# TODO nice to have: write vocabulary out
+def build_vocab(args, txts, special=['<EOS>', '<UNK>', '<NUM>', '<SPECIAL>', '<URL>']):
+    freqs = defaultdict(int)
+    for txt in txts:
+        clean_sent = re.sub(r"<(.+?)>", "", txt).strip().split()
+        clean_words = [float(word) if is_number(word) else word for word in clean_sent]
+        for word in clean_words:
+            freqs[word] += 1
+
+    # pruning vocab borrowed from Yoon Kim
+    vocab = [(word, count) for word, count in freqs.iteritems()]
+    vocab.sort(key = lambda x: x[1], reverse = True)
+    if args.vocab_size >= 1:
+        vocab_size = int(min(args.vocab_size, len(vocab)))
+        pruned = {pair[0]:pair[1] for pair in vocab[:vocab_size]}
+    else:
+        pruned = {pair[0]:pair[1] for pair in vocab[:int(vocab_size*len(vocab))]}
+
     word2ind = {}
     ind2word = {}
     ind = 0
+    for word in special:
+        word2ind[word] = ind
+        ind2word[ind] = word
+        ind += 1
 
-    for txt in txts:
-        words = txt.split()
-        for word in words:
-            if word not in word2ind:
-                word2ind[word] = ind
-                ind2word[ind] = word
-                ind += 1
+    for word in pruned:
+        if word not in word2ind:
+            word2ind[word] = ind
+            ind2word[ind] = word
+            ind += 1
 
+    print 'Full vocab size: %d, pruned vocab size: %d' % (len(vocab), len(pruned))
     return word2ind, ind2word
 
 def build_data(txts, word2ind, gram_size):
@@ -26,9 +54,9 @@ def build_data(txts, word2ind, gram_size):
     targs = []
 
     for i, txt in enumerate(txts):
-        words = txt.split()
+        words = [word2ind['<NUM>'] if is_number(word) else word for word in txt.split()]
         # TODO may want to pad start of comment / end of comment differently
-        conv_txt = [word2ind[word] for word in words] # note: data is already padded
+        conv_txt = [word2ind[word] if word in word2ind else word2ind['<UNK>'] for word in words]
         for j in xrange(len(words)-gram_size):
             inputs.append(conv_txt[j:j+gram_size])
             targs.append(conv_txt[j+gram_size])
@@ -43,7 +71,9 @@ def main(arguments):
     parser.add_argument('--n', help='gram size', type=int, default=5)
     parser.add_argument('--split', help='train size as fraction of data', type=float, default=.8)
     parser.add_argument('--outfile', help='file prefix to write to (hdf5)', type=str)
-    # want to potentially save input data as pickle, write vocab
+    parser.add_argument('--vocab_size', help='max vocab size, either an absolute number or \
+                                                a percentage', type=float, default=1.)
+    # TODO want to potentially save input data as pickle, write vocab
     args = parser.parse_args(arguments)
     if not args.srcfile or not args.outfile:
         raise ValueError("srcfile or outfile not provided")
@@ -53,7 +83,7 @@ def main(arguments):
     txt_data = complete_data[:,-1] # due to file formatting
 
     print "Generating vocab..."
-    word2ind, ind2word = build_vocab(txt_data)
+    word2ind, ind2word = build_vocab(args, txt_data)
 
     print "Generating data..."
     inputs, targs = build_data(txt_data, word2ind, args.n-1) # do n-1 b/c lazy indexing
