@@ -10,6 +10,8 @@ import ops
 import math
 from data import Dataset
 
+NUM_THREADS = 4
+
 def build_data(args):
     datafile = h5py.File(args.datafile, 'r')
     train_inputs = datafile['train_inputs']
@@ -49,7 +51,7 @@ def train(args, data, params):
         saver = tf.train.Saver()
         '''
 
-        sess = tf.Session()
+        sess = tf.Session(config=tf.ConfigProto(intra_op_parallelism_threads=NUM_THREADS))
         init = tf.initialize_all_variables() # initialize variables before they can be used
         sess.run(init)
 
@@ -89,7 +91,6 @@ def main(arguments):
     # load data and model parameters
     print "Loading data..."
     d, p = build_data(args)
-    print "Vocab size: %d" % p['vocab_size']
 
     # train
     print "Beginning training..."

@@ -3,13 +3,14 @@ import tensorflow as tf
 import pdb
 
 # model: softmax(W2*tanh(W1*x)) where x are embeddings
-def model(inputs, params):
+def model(inputs, params, init=None):
     n = params['gram_size'] - 1 # -1 to get shape of context
     V = params['vocab_size']
     d_emb = params['emb_size']
     d_hid = params['hid_size']
 
-    embeddings = tf.Variable(tf.random_uniform([V, d_emb], -1.0, 1.0))
+    embed_init = init if init else embed_init = tf.random_uniform([V, d_emb], -1.0, 1.0)
+    embeddings = tf.Variable(embed_init)
     embeds = tf.nn.embedding_lookup(embeddings, inputs) # will want to load pretrained
     reshape = tf.reshape(embeds, [-1, n*d_emb], name='reshape') # TODO explore position depedent embs
     with tf.name_scope('linear1'):
