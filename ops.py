@@ -35,17 +35,20 @@ def loss(logits, labels):
     loss = tf.reduce_mean(cross_entropy, name='xentropy_mean')
     return loss
 
-# TODO normalize embeddings; clip/normalize gradient?; decay learning rate
+# TODO normalize embeddings 
 def train(loss, learning_rate_ph, args):
     optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate_ph)
     #global_step = tf.Variable(0, name='global_step', trainable=False) # counter for number of batches
     #train_op = optimizer.minimize(loss, global_step=global_step)
     grads_and_vars = optimizer.compute_gradients(loss)
     if args.grad_reg == 'norm':
-	    reg_grads_and_vars = tf.clip_by_norm(grads_and_vars, args.max_grad)
-    else
-	    reg_grads_and_vars = tf.clip_by_value(grads_and_vars, -args.max_grad, args.max_grad)
-    train_op = optimizer.apply_gradients(reg_grads_and_vars)
+        reg_grads_and_vars = [(tf.clip_by_norm(grad, args.max_grad), var) for grad, var in grads_and_vars]
+        train_op = optimizer.apply_gradients(reg_grads_and_vars)
+    elif args.grad_reg == 'clip':
+        reg_grads_and_vars = [(tf.clip_by_value(grad, -args.max_grad, args.max_grad), var) for grad, var in grads_and_vars]
+        train_op = optimizer.apply_gradients(reg_grads_and_vars)
+    else:
+        train_op = optimzer.apply_gradients(grads_and_vars)
     return train_op
 
 # uses the loss score to compute perplexity

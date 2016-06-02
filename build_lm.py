@@ -46,7 +46,7 @@ def train(args, data, params):
 
         scores = ops.model(input_ph, params)
         loss = ops.loss(scores, targ_ph)
-        train_op = ops.train(loss, learning_rate_ph, args.grad_reg)
+        train_op = ops.train(loss, learning_rate_ph, args)
         valid_op = ops.validate(loss)
 
 	last_valid = 1000000 # big number
