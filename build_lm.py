@@ -24,18 +24,20 @@ def build_data(args):
             {'gram_size':datafile['gram_size'][0], 'vocab_size':datafile['vocab_size'][0], \
                 'hid_size':args.d_hid, 'emb_size':args.d_emb}
 
-def get_feed_dict(data, i, input_ph, targ_ph):
+def get_feed_dict(data, i, input_ph, targ_ph, learning_rate=None):
     input_batch, targ_batch = data.batch(i)
 
     feed_dict = {
         input_ph: input_batch,
         targ_ph: targ_batch,
+        learning_rate_ph: learning_rate
     }
     return feed_dict
 
 def train(args, data, params):
     train = data['train']
     valid = data['valid']
+    learning_rate = args.learning_rate
 
     with tf.Graph().as_default():
         input_ph = tf.placeholder(tf.int32, shape=[args.batch_size,params['gram_size']-1])
@@ -56,12 +58,12 @@ def train(args, data, params):
         sess.run(init)
 
         for epoch in xrange(args.nepochs):
-            print "Training epoch %d..." % epoch
+            print "Training epoch %d w/ learning rate %.3f..." % (epoch, learning_rate)
             start_time = time.time()
             train_loss = 0.
             valid_loss = 0.
             for i in xrange(train.nbatches):
-                train_feed_dict = get_feed_dict(train, i, input_ph, targ_ph)
+                train_feed_dict = get_feed_dict(train, i, input_ph, targ_ph, learning_rate)
                 _, batch_loss = sess.run([train_op, loss], feed_dict=train_feed_dict)
                 train_loss += batch_loss
 
@@ -74,6 +76,8 @@ def train(args, data, params):
             print "\tloss = %.3f, valid ppl = %.3f, %.3f s" % \
                 (math.exp(train_loss/train.nbatches), \
                     math.exp(valid_loss/valid.nbatches), duration)
+            if last_valid < valid_loss:
+                learning_rate /= 2.
 
 def main(arguments):
     parser = argparse.ArgumentParser(
