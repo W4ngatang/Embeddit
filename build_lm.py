@@ -46,7 +46,7 @@ def train(args, data, params):
 
         scores = ops.model(input_ph, params)
         loss = ops.loss(scores, targ_ph)
-        train_op = ops.train(loss, learning_rate_ph)
+        train_op = ops.train(loss, learning_rate_ph, args.grad_reg)
         valid_op = ops.validate(loss)
 
 	last_valid = 1000000 # big number
@@ -89,6 +89,8 @@ def main(arguments):
     parser.add_argument('--nepochs', help='number of epochs to train for', type=int)
     parser.add_argument('--d_hid', help='hidden layer size', type=int, default=100)
     parser.add_argument('--d_emb', help='embedding size', type=int, default=300)
+    parser.add_argument('--grad_reg', help='type of gradient regularization (either norm or clip)', type=str, default='norm')
+    parser.add_argument('--max_grad', help='maximum gradient value', type=float, default=5.)
     # want to potentially save input data as pickle, write vocab
     args = parser.parse_args(arguments)
 
