@@ -36,9 +36,8 @@ def loss(logits, labels):
     return loss
 
 # TODO normalize embeddings; clip/normalize gradient?; decay learning rate
-def train(loss, learning_rate): # NOTE learning rate not used here
+def train(loss, learning_rate_ph):
     #tf.scalar_summary(loss.op.name, loss) # TODO what does this do
-    learning_rate_ph = tf.placeholder(tf.float32, shape=[])
     optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate_ph)
     global_step = tf.Variable(0, name='global_step', trainable=False) # counter for number of batches
     train_op = optimizer.minimize(loss, global_step=global_step)

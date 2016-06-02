@@ -10,7 +10,7 @@ import ops
 import math
 from data import Dataset
 
-NUM_THREADS = 4
+NUM_THREADS = 32
 
 def build_data(args):
     datafile = h5py.File(args.datafile, 'r')
@@ -24,7 +24,7 @@ def build_data(args):
             {'gram_size':datafile['gram_size'][0], 'vocab_size':datafile['vocab_size'][0], \
                 'hid_size':args.d_hid, 'emb_size':args.d_emb}
 
-def get_feed_dict(data, i, input_ph, targ_ph, learning_rate=None):
+def get_feed_dict(data, i, input_ph, targ_ph, learning_rate_ph, learning_rate=0.):
     input_batch, targ_batch = data.batch(i)
 
     feed_dict = {
@@ -42,18 +42,17 @@ def train(args, data, params):
     with tf.Graph().as_default():
         input_ph = tf.placeholder(tf.int32, shape=[args.batch_size,params['gram_size']-1])
         targ_ph = tf.placeholder(tf.int32, shape=[args.batch_size])
+	learning_rate_ph = tf.placeholder(tf.float32, shape=[])
 
         scores = ops.model(input_ph, params)
         loss = ops.loss(scores, targ_ph)
-        train_op = ops.train(loss, args.learn_rate)
+        train_op = ops.train(loss, learning_rate_ph)
         valid_op = ops.validate(loss)
 
-        '''
-        summary_op = tf.merge_all_summaries() # TODO read about summaries + savers
-        saver = tf.train.Saver()
-        '''
+	last_valid = 1000000 # big number
 
-        sess = tf.Session(config=tf.ConfigProto(intra_op_parallelism_threads=NUM_THREADS))
+        sess = tf.Session(config=tf.ConfigProto(inter_op_parallelism_threads=NUM_THREADS,\
+				intra_op_parallelism_threads=NUM_THREADS))
         init = tf.initialize_all_variables() # initialize variables before they can be used
         sess.run(init)
 
@@ -63,12 +62,12 @@ def train(args, data, params):
             train_loss = 0.
             valid_loss = 0.
             for i in xrange(train.nbatches):
-                train_feed_dict = get_feed_dict(train, i, input_ph, targ_ph, learning_rate)
+                train_feed_dict = get_feed_dict(train, i, input_ph, targ_ph, learning_rate_ph, learning_rate)
                 _, batch_loss = sess.run([train_op, loss], feed_dict=train_feed_dict)
                 train_loss += batch_loss
 
             for i in xrange(valid.nbatches):
-                valid_feed_dict = get_feed_dict(valid, i, input_ph, targ_ph)
+                valid_feed_dict = get_feed_dict(valid, i, input_ph, targ_ph, learning_rate_ph)
                 batch_loss = sess.run([loss], feed_dict=valid_feed_dict)[0]
                 valid_loss += batch_loss
 
@@ -78,6 +77,7 @@ def train(args, data, params):
                     math.exp(valid_loss/valid.nbatches), duration)
             if last_valid < valid_loss:
                 learning_rate /= 2.
+            last_valid = valid_loss
 
 def main(arguments):
     parser = argparse.ArgumentParser(
@@ -85,7 +85,7 @@ def main(arguments):
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--datafile', help='source data file', type=str)
     parser.add_argument('--batch_size', help='batch_size', type=int)
-    parser.add_argument('--learn_rate', help='initial learning rate', type=float)
+    parser.add_argument('--learning_rate', help='initial learning rate', type=float, default=1.)
     parser.add_argument('--nepochs', help='number of epochs to train for', type=int)
     parser.add_argument('--d_hid', help='hidden layer size', type=int, default=100)
     parser.add_argument('--d_emb', help='embedding size', type=int, default=300)
@@ -97,7 +97,7 @@ def main(arguments):
     d, p = build_data(args)
 
     # train
-    print "Beginning training..."
+    print "Beginning training using %d threads..." % NUM_THREADS
     train(args, d, p)
          
 if __name__ == '__main__':
