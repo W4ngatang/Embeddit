@@ -9,8 +9,8 @@ def model(inputs, params, pretrain=None):
     d_emb = params['emb_size']
     d_hid = params['hid_size']
 
-    if pretrain:
-        emebed_init = pretrain
+    if pretrain is not None:
+        embed_init = tf.constant(pretrain, dtype=np.float32, shape=[V, d_emb])
     else:
         embed_init = tf.random_uniform([V, d_emb], -1.0, 1.0)
     #embed_init = init if init else embed_init = tf.random_uniform([V, d_emb], -1.0, 1.0)

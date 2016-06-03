@@ -42,14 +42,20 @@ def train(args, data, params):
     with tf.Graph().as_default():
         input_ph = tf.placeholder(tf.int32, shape=[args.batch_size,params['gram_size']-1])
         targ_ph = tf.placeholder(tf.int32, shape=[args.batch_size])
-	learning_rate_ph = tf.placeholder(tf.float32, shape=[])
+        learning_rate_ph = tf.placeholder(tf.float32, shape=[])
 
-        scores = ops.model(input_ph, params)
+        if args.w2v:
+            with h5py.File(args.datafile, 'r') as datafile:
+                embeds = datafile['embeds'][:]   
+            scores = ops.model(input_ph, params, embeds)
+        else:
+            scores = ops.model(input_ph, params)
+        
         loss = ops.loss(scores, targ_ph)
         train_op = ops.train(loss, learning_rate_ph, args)
         valid_op = ops.validate(loss)
 
-	last_valid = 1000000 # big number
+        last_valid = 1000000 # big number
 
         sess = tf.Session(config=tf.ConfigProto(inter_op_parallelism_threads=NUM_THREADS,\
 				intra_op_parallelism_threads=NUM_THREADS))
@@ -91,6 +97,7 @@ def main(arguments):
     parser.add_argument('--d_emb', help='embedding size', type=int, default=300)
     parser.add_argument('--grad_reg', help='type of gradient regularization (either norm or clip)', type=str, default='norm')
     parser.add_argument('--max_grad', help='maximum gradient value', type=float, default=5.)
+    parser.add_argument('--w2v', help='1 if load w2v vectors, 0 if no', type=int, default=0)
     # want to potentially save input data as pickle, write vocab
     args = parser.parse_args(arguments)
 
