@@ -10,10 +10,12 @@ def model(inputs, params, pretrain=None):
     d_hid = params['hid_size']
 
     if pretrain is not None:
+        print "\tUsing pretrained vectors..."
         embed_init = tf.constant(pretrain, dtype=np.float32, shape=[V, d_emb])
     else:
         embed_init = tf.random_uniform([V, d_emb], -1.0, 1.0)
-    #embed_init = init if init else embed_init = tf.random_uniform([V, d_emb], -1.0, 1.0)
+    #embed_init = tf.constant(pretrain, dtype=np.float32, shape=[V, d_emb]) if pretrain is not None \
+    #    else embed_init = tf.random_uniform([V, d_emb], -1.0, 1.0)
     embeddings = tf.Variable(embed_init)
     embeds = tf.nn.embedding_lookup(embeddings, inputs) # will want to load pretrained
     reshape = tf.reshape(embeds, [-1, n*d_emb], name='reshape') # TODO explore position depedent embs
