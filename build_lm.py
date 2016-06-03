@@ -60,7 +60,11 @@ def train(args, data, params):
         sess = tf.Session(config=tf.ConfigProto(inter_op_parallelism_threads=NUM_THREADS,\
 				intra_op_parallelism_threads=NUM_THREADS))
         init = tf.initialize_all_variables() # initialize variables before they can be used
+        saver = tf.train.Saver()
         sess.run(init)
+        if args.modelfile:
+            saver.restore(sess, args.modelfile)
+            print "Model restored from %s" % args.modelfile
 
         for epoch in xrange(args.nepochs):
             print "Training epoch %d w/ learning rate %.3f..." % (epoch, learning_rate)
@@ -83,6 +87,8 @@ def train(args, data, params):
                     math.exp(valid_loss/valid.nbatches), duration)
             if last_valid < valid_loss:
                 learning_rate /= 2.
+            elif args.outfile:
+                saver.save(sess, args.outdir)#, global_step=epoch)
             last_valid = valid_loss
 
 def main(arguments):
@@ -90,6 +96,8 @@ def main(arguments):
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--datafile', help='source data file', type=str)
+    parser.add_argument('--outfile', help='file to save best model to', type=str, default='')
+    parser.add_argument('--modelfile', help='file to load model variable values from', type=str, default='')
     parser.add_argument('--batch_size', help='batch_size', type=int)
     parser.add_argument('--learning_rate', help='initial learning rate', type=float, default=1.)
     parser.add_argument('--nepochs', help='number of epochs to train for', type=int)
@@ -108,6 +116,8 @@ def main(arguments):
     # train
     print "Beginning training using %d threads..." % NUM_THREADS
     train(args, d, p)
+
+    pdb.set_trace() # just till I figure out what to do with these things...
          
 if __name__ == '__main__':
     sys.exit(main(sys.argv[1:]))
