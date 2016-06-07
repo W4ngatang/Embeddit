@@ -52,6 +52,8 @@ def build_vocab(args, special=['<EOS>', '<UNK>', '<NUM>', '<SPECIAL>', '<URL>'])
                 f.write("%s %d %d\n" % (word, idx, freqs[word]))
             else:
                 f.write("%s %d %d\n" % (word, idx, -1))
+    with open(args.outfile+'.vocab.pkl', 'w') as f:
+        pickle.dump((word2ind, ind2word), f)
 
     print '\tFull vocab size: %d, pruned vocab size: %d' % (len(vocab), len(word2ind))
     return word2ind, ind2word

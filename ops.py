@@ -28,7 +28,11 @@ def model(inputs, params, pretrain=None):
         weights = tf.Variable(tf.random_uniform([d_hid, V], -1.0, 1.0), name='weights')
         biases = tf.Variable(tf.zeros([V], name='biases'))
         linear2 = tf.matmul(activation, weights)+biases
-    return linear2
+
+    # ops to normalize embeddings
+    norm = tf.sqrt(tf.reduce_sum(tf.square(embeddings), 1, keep_dims=True))
+    normalize = embeddings / norm
+    return linear2, normalize
 
 # takes in logits (pre-softmax normalized scores)
 def loss(logits, labels):
@@ -40,8 +44,6 @@ def loss(logits, labels):
 # TODO normalize embeddings 
 def train(loss, learning_rate_ph, args):
     optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate_ph)
-    #global_step = tf.Variable(0, name='global_step', trainable=False) # counter for number of batches
-    #train_op = optimizer.minimize(loss, global_step=global_step)
     grads_and_vars = optimizer.compute_gradients(loss)
     if args.grad_reg == 'norm':
         reg_grads_and_vars = [(tf.clip_by_norm(grad, args.max_grad), var) for grad, var in grads_and_vars]

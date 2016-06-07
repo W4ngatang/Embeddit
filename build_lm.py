@@ -8,6 +8,8 @@ import pdb
 import time
 import ops
 import math
+from sklearn.manifold import TSNE
+import matplotlib.pyplot as plt
 from data import Dataset
 
 NUM_THREADS = 32
@@ -47,9 +49,9 @@ def train(args, data, params):
         if args.w2v:
             with h5py.File(args.datafile, 'r') as datafile:
                 embeds = datafile['embeds'][:]   
-            scores = ops.model(input_ph, params, embeds)
+            scores, normalize_op = ops.model(input_ph, params, embeds)
         else:
-            scores = ops.model(input_ph, params)
+            scores, normalize_op = ops.model(input_ph, params)
         
         loss = ops.loss(scores, targ_ph)
         train_op = ops.train(loss, learning_rate_ph, args)
@@ -76,6 +78,9 @@ def train(args, data, params):
                 _, batch_loss = sess.run([train_op, loss], feed_dict=train_feed_dict)
                 train_loss += batch_loss
 
+            if args.normalize:
+                _ = sess.run([normalize_op])
+
             for i in xrange(valid.nbatches):
                 valid_feed_dict = get_feed_dict(valid, i, input_ph, targ_ph, learning_rate_ph)
                 batch_loss = sess.run([loss], feed_dict=valid_feed_dict)[0]
@@ -88,8 +93,25 @@ def train(args, data, params):
             if last_valid < valid_loss:
                 learning_rate /= 2.
             elif args.outfile:
-                saver.save(sess, args.outdir)#, global_step=epoch)
+                saver.save(sess, args.outfile)#, global_step=epoch)
             last_valid = valid_loss
+        
+        return sess.run([normalize_op])[0] # return final normalized embeddings
+
+def visualize(args, embeddings):
+    with open(args.vocabfile, 'r') as f:
+        _, ind2word = pickle.load(f)
+        print "Loaded vocabulary"
+    pdb.set_trace()
+    tsne = TSNE(perplexity=30, n_components=2, init='pca', n_iter=5000)
+    plot_only = 50
+    low_dim_embs = tsne.fit_transform(embeddings[:plot_only,:])
+    labels = [ind2word[i] for i in xrange(plot_only)]
+    plt.figure(figsize=(18,18))
+    for i, label in enumerate(labels):
+        x, y = low_dim_embs[i,:]
+        plt.scatter(x, y)
+        plt.annotate(label, xy=(x,y), xytext=(5,2), textcoord='offset points', ha='right', va='bottom')
 
 def main(arguments):
     parser = argparse.ArgumentParser(
@@ -105,7 +127,10 @@ def main(arguments):
     parser.add_argument('--d_emb', help='embedding size', type=int, default=300)
     parser.add_argument('--grad_reg', help='type of gradient regularization (either norm or clip)', type=str, default='norm')
     parser.add_argument('--max_grad', help='maximum gradient value', type=float, default=5.)
+    parser.add_argument('--normalize', help='1 if normalize, 0 otherwise', type=int, default=0)
     parser.add_argument('--w2v', help='1 if load w2v vectors, 0 if no', type=int, default=0)
+    parser.add_argument('--visualize', help='1 if visualize, 0 otherwise', type=int, default=0)
+    parser.add_argument('--vocabfile', help='path to pickle file containing vocabulary', type=str)
     # want to potentially save input data as pickle, write vocab
     args = parser.parse_args(arguments)
 
@@ -115,9 +140,11 @@ def main(arguments):
 
     # train
     print "Beginning training using %d threads..." % NUM_THREADS
-    train(args, d, p)
+    embeddings = train(args, d, p)
 
-    pdb.set_trace() # just till I figure out what to do with these things...
+    if args.visualize:
+        print "Visualizing embeddings"
+        visualize(args, embeddings)
          
 if __name__ == '__main__':
     sys.exit(main(sys.argv[1:]))
