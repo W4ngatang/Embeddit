@@ -100,18 +100,20 @@ def train(args, data, params):
 
 def visualize(args, embeddings):
     with open(args.vocabfile, 'r') as f:
-        _, ind2word = pickle.load(f)
-        print "Loaded vocabulary"
-    pdb.set_trace()
+        word2ind, ind2word = pickle.load(f)
     tsne = TSNE(perplexity=30, n_components=2, init='pca', n_iter=5000)
-    plot_only = 50
+    pdb.set_trace()
+    plot_only = 1000
+    print '\tRunning t-SNE...'
     low_dim_embs = tsne.fit_transform(embeddings[:plot_only,:])
     labels = [ind2word[i] for i in xrange(plot_only)]
-    plt.figure(figsize=(18,18))
+    assert low_dim_embs.shape[0] >= len(labels)
+    plt.figure(figsize=(25, 25))
     for i, label in enumerate(labels):
         x, y = low_dim_embs[i,:]
         plt.scatter(x, y)
-        plt.annotate(label, xy=(x,y), xytext=(5,2), textcoord='offset points', ha='right', va='bottom')
+        plt.annotate(label, xy=(x,y), xytext=(5,2), textcoords='offset points', ha='right', va='bottom')
+    plt.show()
 
 def main(arguments):
     parser = argparse.ArgumentParser(

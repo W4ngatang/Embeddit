@@ -134,7 +134,12 @@ def main(arguments):
     all_inputs, all_targs = build_data(args.srcfiles, word2ind, args.n-1) # do n-1 b/c lazy indexing
     for i, (inputs, targs) in enumerate(zip(all_inputs, all_targs)):
         split_pt = int(inputs.shape[0]*args.split)
-        with h5py.File(args.outfile+'.'+str(i)+'.hdf5', 'w') as f:
+        if len(all_inputs) == 1:
+            filename = args.outfile + '.hdf5'
+        else:
+            filename = args.outfile + '.' + str(i) + '.hdf5'
+
+        with h5py.File(filename) as f:
             f['train_inputs'] = inputs[:split_pt]
             f['train_targets'] = targs[:split_pt]
             f['valid_inputs'] = inputs[split_pt:]
