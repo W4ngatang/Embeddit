@@ -51,12 +51,10 @@ def train(args, data, params):
                 embeds = datafile['embeds'][:]   
             scores, normalize_op = ops.model(input_ph, params, embeds)
         else:
-            scores, normalize_op = ops.model(input_ph, params)
+            scores, normalize_op, vars = ops.model(input_ph, params)
         
         loss = ops.loss(scores, targ_ph)
-        train_op = ops.train(loss, learning_rate_ph, args)
-        valid_op = ops.validate(loss)
-
+        train_op, print_op = ops.train(loss, learning_rate_ph, args)
         last_valid = 1000000 # big number
 
         sess = tf.Session(config=tf.ConfigProto(inter_op_parallelism_threads=NUM_THREADS,\
@@ -68,23 +66,34 @@ def train(args, data, params):
             saver.restore(sess, args.modelfile)
             print "Model restored from %s" % args.modelfile
 
+        valid_loss = 0.
+        for i in xrange(valid.nbatches):
+            valid_feed_dict = get_feed_dict(valid, i, input_ph, targ_ph, learning_rate_ph)
+            batch_loss = sess.run([loss], feed_dict=valid_feed_dict)[0]
+            valid_loss += batch_loss
+        print 'Initial valid loss: %.3f' % math.exp(valid_loss/valid.nbatches)
+
         for epoch in xrange(args.nepochs):
-            print "Training epoch %d w/ learning rate %.3f..." % (epoch, learning_rate)
+            print "Training epoch %d with learning rate %.3f" % (epoch+1, learning_rate)
+            vals = sess.run(vars)
             start_time = time.time()
             train_loss = 0.
             valid_loss = 0.
+
             for i in xrange(train.nbatches):
-                train_feed_dict = get_feed_dict(train, i, input_ph, targ_ph, learning_rate_ph, learning_rate)
+                train_feed_dict = get_feed_dict(train, i, input_ph, targ_ph, \
+                    learning_rate_ph, learning_rate)
+                #grads = sess.run(print_op, feed_dict=train_feed_dict)
                 _, batch_loss = sess.run([train_op, loss], feed_dict=train_feed_dict)
                 train_loss += batch_loss
-
-            if args.normalize:
-                _ = sess.run([normalize_op])
 
             for i in xrange(valid.nbatches):
                 valid_feed_dict = get_feed_dict(valid, i, input_ph, targ_ph, learning_rate_ph)
                 batch_loss = sess.run([loss], feed_dict=valid_feed_dict)[0]
                 valid_loss += batch_loss
+
+            if args.normalize:
+                _ = sess.run(normalize_op)
 
             duration = time.time() - start_time
             print "\tloss = %.3f, valid ppl = %.3f, %.3f s" % \
@@ -93,7 +102,7 @@ def train(args, data, params):
             if last_valid < valid_loss:
                 learning_rate /= 2.
             elif args.outfile:
-                saver.save(sess, args.outfile)#, global_step=epoch)
+                saver.save(sess, args.outfile)
             last_valid = valid_loss
         
         return sess.run([normalize_op])[0] # return final normalized embeddings
@@ -126,8 +135,8 @@ def main(arguments):
     parser.add_argument('--learning_rate', help='initial learning rate', type=float, default=1.)
     parser.add_argument('--nepochs', help='number of epochs to train for', type=int)
     parser.add_argument('--d_hid', help='hidden layer size', type=int, default=100)
-    parser.add_argument('--d_emb', help='embedding size', type=int, default=300)
-    parser.add_argument('--grad_reg', help='type of gradient regularization (either norm or clip)', type=str, default='norm')
+    parser.add_argument('--d_emb', help='embedding size', type=int, default=30)
+    parser.add_argument('--grad_reg', help='type of gradient regularization (either norm or clip)', type=str, default='')
     parser.add_argument('--max_grad', help='maximum gradient value', type=float, default=5.)
     parser.add_argument('--normalize', help='1 if normalize, 0 otherwise', type=int, default=0)
     parser.add_argument('--w2v', help='1 if load w2v vectors, 0 if no', type=int, default=0)
@@ -141,7 +150,8 @@ def main(arguments):
     d, p = build_data(args)
 
     # train
-    print "Beginning training using %d threads..." % NUM_THREADS
+    print "Training using %d threads..." % NUM_THREADS
+    if args.grad_reg: print "\tUsing gradient %s" % args.grad_reg
     embeddings = train(args, d, p)
 
     if args.visualize:

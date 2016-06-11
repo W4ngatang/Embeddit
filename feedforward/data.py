@@ -10,7 +10,7 @@ class Dataset:
         if batch_size > 0:
             self.batch_size = batch_size
             self.nbatches = int(inputs.shape[0] / batch_size)
-        else:
+        else: # run the entire dataset through
             self.batch_size = inputs.shape[0]
             self.nbatches = 1
 

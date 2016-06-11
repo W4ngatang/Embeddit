@@ -9,30 +9,38 @@ def model(inputs, params, pretrain=None):
     d_emb = params['emb_size']
     d_hid = params['hid_size']
 
+    vars = []
     if pretrain is not None:
         print "\tUsing pretrained vectors..."
         embed_init = tf.constant(pretrain, dtype=np.float32, shape=[V, d_emb])
     else:
-        embed_init = tf.random_uniform([V, d_emb], -1.0, 1.0)
-    #embed_init = tf.constant(pretrain, dtype=np.float32, shape=[V, d_emb]) if pretrain is not None \
-    #    else embed_init = tf.random_uniform([V, d_emb], -1.0, 1.0)
+        embed_init = tf.random_uniform([V, d_emb], -5.0, 5.0)
+
     embeddings = tf.Variable(embed_init)
-    embeds = tf.nn.embedding_lookup(embeddings, inputs) # will want to load pretrained
-    reshape = tf.reshape(embeds, [-1, n*d_emb], name='reshape') # TODO explore position depedent embs
+    vars.append(embeddings)
+
+    norm = tf.sqrt(tf.reduce_sum(tf.square(embeddings), 1, keep_dims=True))
+    normalized = embeddings / norm
+
+    embeds = tf.nn.embedding_lookup(normalized, inputs) 
+    reshape = tf.reshape(embeds, [-1, n*d_emb], name='reshape')
     with tf.name_scope('linear1'):
-        weights = tf.Variable(tf.random_uniform([n*d_emb, d_hid], -1.0, 1.0), name='weights')
-        biases = tf.Variable(tf.zeros([d_hid], name='biases'))
+        weights = tf.Variable(tf.random_uniform([n*d_emb, d_hid], -.1, .1), name='weights')
+        biases = tf.Variable(tf.random_uniform([d_hid], -.1, .1), name='biases')
         linear1 = tf.matmul(reshape, weights)+biases
+        vars += [weights, biases]
     activation = tf.nn.tanh(linear1)
     with tf.name_scope('linear2'):
-        weights = tf.Variable(tf.random_uniform([d_hid, V], -1.0, 1.0), name='weights')
-        biases = tf.Variable(tf.zeros([V], name='biases'))
+        weights = tf.Variable(tf.random_uniform([d_hid, V], -.1, .1), name='weights')
+        biases = tf.Variable(tf.random_uniform([V], -.1, .1), name='biases')
         linear2 = tf.matmul(activation, weights)+biases
+        vars += [weights, biases]
 
     # ops to normalize embeddings
     norm = tf.sqrt(tf.reduce_sum(tf.square(embeddings), 1, keep_dims=True))
-    normalize = embeddings / norm
-    return linear2, normalize
+    normalized = embeddings / norm
+    normalize = embeddings.assign(normalized)
+    return linear2, normalize, vars
 
 # takes in logits (pre-softmax normalized scores)
 def loss(logits, labels):
@@ -41,10 +49,11 @@ def loss(logits, labels):
     loss = tf.reduce_mean(cross_entropy, name='xentropy_mean')
     return loss
 
-# TODO normalize embeddings 
 def train(loss, learning_rate_ph, args):
     optimizer = tf.train.GradientDescentOptimizer(learning_rate=learning_rate_ph)
+    #train_op = optimizer.minimize(loss)
     grads_and_vars = optimizer.compute_gradients(loss)
+    print_op = [tf.Print(grad,[grad]) for grad, var in grads_and_vars] # debugging...
     if args.grad_reg == 'norm':
         reg_grads_and_vars = [(tf.clip_by_norm(grad, args.max_grad), var) for grad, var in grads_and_vars]
         train_op = optimizer.apply_gradients(reg_grads_and_vars)
@@ -52,8 +61,8 @@ def train(loss, learning_rate_ph, args):
         reg_grads_and_vars = [(tf.clip_by_value(grad, -args.max_grad, args.max_grad), var) for grad, var in grads_and_vars]
         train_op = optimizer.apply_gradients(reg_grads_and_vars)
     else:
-        train_op = optimzer.apply_gradients(grads_and_vars)
-    return train_op
+        train_op = optimizer.apply_gradients(grads_and_vars)
+    return train_op, print_op
 
 # uses the loss score to compute perplexity
 # Note: not really used because need to average loss then take exp

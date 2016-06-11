@@ -1,4 +1,4 @@
 #!/bin/bash
 
-python ff_lm.py --datafile /dfs/scratch0/wangalex/data/fantasylcs.0.hdf5 --batch_size 1024 --nepochs 20 --vocabfile /dfs/scrat0/wangalex/data/fantasylcs.vocab.pkl --outfile /dfs/scratch0/wangalex/models/fantasylcs_noW2V.ckpt > fantasy.out
-echo "Finished $1" > sendmail alexwang@college.harvard.edu
+python ff_lm.py --datafile /dfs/scratch0/wangalex/data/ptb/ptb10k5.hdf5 --batch_size 1024 --nepochs 25 --vocabfile /dfs/scratch0/wangalex/data/ptb/ptb10k5.vocab.pkl --outfile /dfs/scratch0/wangalex/data/ptb/ptb10k5.ckpt --w2v 0 --d_emb 30 --learning_rate 1.0 --normalize 1
+# sendmail alexwang@college.harvard.edu
