@@ -16,75 +16,45 @@ NUM_THREADS = 32
 BIG_NUM = 100000
 
 def build_data(args):
-    datafile = h5py.File(args.datafile, 'r')
-    train_inputs = datafile['train_inputs']
-    train_targs = datafile['train_targets']
-    valid_inputs = datafile['valid_inputs']
-    valid_targs = datafile['valid_targets']
-    test_inputs = datafile['test_inputs']
-    train = Dataset(args.batch_size, train_inputs, train_targs)
-    valid = Dataset(args.batch_size, valid_inputs, valid_targs)
-    test = Dataset(args.batch_size, test_inputs)
+    df = h5py.File(args.datafile, 'r')
+    train_inputs = df['train_inputs']
+    train_targs = df['train_targets']
+    valid_inputs = df['valid_inputs']
+    valid_targs = df['valid_targets']
+    test_inputs = df['test_inputs']
+    train = Dataset(train_inputs, train_targs)
+    valid = Dataset(valid_inputs, valid_targs)
+    test = Dataset(test_inputs)
+    # there has to be a better way to return parameters...
     return {'train':train, 'valid':valid, 'test':test}, \
-            {'gram_size':datafile['gram_size'][0], 'batch_size':args.batch_size, \
-                'vocab_size':datafile['vocab_size'][0], 'd_hid':args.d_hid, \
-                'seq_len':args.seq_len}
+            {'batch_size':df['batch_size'][0], 'seq_len':df['seq_len'][0], \
+                'vocab_size':df['vocab_size'][0], 'd_hid':args.d_hid, \
+                'model':args.model, 'max_grad_norm':args.max_grad, \
+                'drop_prob':args.drop_prob, 'nlayers':args.nlayers}
 
-def get_feed_dict(data, i, model):
-    input_batch, targ_batch = data.batch(i)
-    feed_dict = {
-        model.input: input_batch,
-        model.targ: targ_batch,
-        model.state: model.initial_state.eval()
-    }
-    return feed_dict
-
-def run_epoch(data, model, train=1):
+def run_epoch(sess, data, model, eval_op):
     loss = 0
+    state = [] 
+    for c,m in model.initial_state: # initial_state: (c_i, m_i) * nlayers
+        state.append((c.eval(), m.eval()))
     for i in xrange(data.nbatches):
-        batch_d = get_feed_dict(data, i, model)
-        if train:
-            _ , batch_loss = sess.run([model.train, model.loss], feed_dict=batch_d)
-        else:
-            batch_loss = sess.run([model.loss], feed_dict=d)[0]
-        loss += batch_loss
-    return loss
+        fetches = [model.loss, eval_op]
+        for c,m in model.last_state:
+            fetches.append(c)
+            fetches.append(m)
 
-def train(args, data, params, model):
-    train = data['train']
-    valid = data['valid']
-    learning_rate = args.learning_rate
+        input_batch, targ_batch = data.batch(i)
+        batch_d = {model.input:input_batch, model.targ:targ_batch}
+        for i, (c,m) in enumerate(model.initial_state):
+            batch_d[c], batch_d[m] = state[i] 
 
-    with tf.Graph().as_default():
-        last_valid = BIG_NUM
+        res = sess.run(fetches, batch_d)
+        loss += res[0]
+        state_flat = res[2:] # states returned flattened
+        state = [state_flat[i:i+model.nlayers] for i in \
+                    xrange(0, len(state_flat), model.nlayers)]
 
-        sess = tf.Session(config=tf.ConfigProto(inter_op_parallelism_threads=NUM_THREADS,\
-				intra_op_parallelism_threads=NUM_THREADS))
-        init = tf.initialize_all_variables() # initialize variables before they can be used
-        saver = tf.train.Saver()
-        sess.run(init)
-
-        if args.modelfile:
-            saver.restore(sess, args.modelfile)
-            print "Model restored from %s" % args.modelfile
-
-        for epoch in xrange(args.nepochs):
-            print "Training epoch %d w/ learning rate %.3f..." % (epoch, learning_rate)
-            start_time = time.time()
-            train_loss = run_epoch(train_data, model, 1)
-            valid_loss = run_epoch(valid_data, model)
-            # TODO regularization?
-            duration = time.time() - start_time
-            print "\tloss = %.3f, valid ppl = %.3f, %.3f s" % \
-                (math.exp(train_loss/train.nbatches), \
-                    math.exp(valid_loss/valid.nbatches), duration)
-            if last_valid < valid_loss:
-                learning_rate /= 2.
-            elif args.outfile:
-                saver.save(sess, args.outfile)
-            last_valid = valid_loss
-        
-        return #sess.run([normalize_op])[0] # return final normalized embeddings
+    return math.exp(loss/data.nbatches)
 
 def visualize(args, embeddings):
     with open(args.vocabfile, 'r') as f:
@@ -110,39 +80,82 @@ def main(arguments):
     parser.add_argument('--datafile', help='source data file', type=str)
     parser.add_argument('--outfile', help='file to save best model to', type=str, default='')
     parser.add_argument('--modelfile', help='file to load model variable values from', type=str, default='')
-    parser.add_argument('--batch_size', help='batch size', type=int, default=32)
-    parser.add_argument('--seq_len', help='length of each sequence per batch', type=int, default=20)
+
+    # Model parameters
+    parser.add_argument('--model', help='type of RNN', type=str, default='lstm')
+    parser.add_argument('--d_hid', help='hidden layer size', type=int, default=200)
+    parser.add_argument('--nlayers', help='number of layers of rnn', type=int, default=2)
+    parser.add_argument('--drop_prob', help='probability of dropout', type=float, default=0.0)
+    parser.add_argument('--init_scale', help='range to initialize over', type=float, default=.1)
+    parser.add_argument('--w2v', help='1 if load w2v vectors, 0 if no', type=int, default=0)
+
+    # Training parameters
     parser.add_argument('--learning_rate', help='initial learning rate', type=float, default=1.)
-    parser.add_argument('--nepochs', help='number of epochs to train for', type=int, default=10)
-    parser.add_argument('--d_hid', help='hidden layer size', type=int, default=100)
-    parser.add_argument('--grad_reg', help='type of gradient regularization (either norm or clip)', type=str, default='')
+    parser.add_argument('--nepochs', help='number of epochs to train for', type=int, default=13)
+    parser.add_argument('--grad_reg', help='type of gradient regularization (either norm or clip)', type=str, default='norm')
     parser.add_argument('--max_grad', help='maximum gradient value', type=float, default=5.)
     parser.add_argument('--normalize', help='1 if normalize, 0 otherwise', type=int, default=0)
-    parser.add_argument('--w2v', help='1 if load w2v vectors, 0 if no', type=int, default=0)
+
+    # Visualization
     parser.add_argument('--visualize', help='1 if visualize, 0 otherwise', type=int, default=0)
     parser.add_argument('--vocabfile', help='path to pickle file containing vocabulary', type=str)
     args = parser.parse_args(arguments)
     if not args.datafile:
         raise ValueError("Must include path to data")
 
-    # load data and model parameters
-    print "Loading data..."
-    data, params = build_data(args)
+    config = tf.ConfigProto(inter_op_parallelism_threads=NUM_THREADS,\
+            intra_op_parallelism_threads=NUM_THREADS)
+    with tf.Graph().as_default(), tf.Session(config=config) as sess:
+        # load data and model parameters
+        print "Loading data..."
+        data, params = build_data(args)
 
-    # get model
-    print "Building model..." # TODO move loading model to here?
-    model = ops.Model(params)
+        # get model, use train and valid models because of dropout
+        print "Building model..." # TODO add saver
+        initializer = tf.random_uniform_initializer(-args.init_scale, args.init_scale)
+        with tf.variable_scope("model", reuse=None, initializer=initializer):
+            train_model = ops.Model(params, is_training=True)
+        with tf.variable_scope("model", reuse=True, initializer=initializer):
+            valid_model = ops.Model(params)
+        tf.initialize_all_variables().run()
 
-    # train and validate
-    print "Beginning training using %d threads..." % NUM_THREADS
-    embeddings = train(args, data, params, model)
+        if args.modelfile:
+            saver.restore(sess, args.modelfile)
+            print "Model restored from %s" % args.modelfile
 
-    # test
-    print "Test perplexity: %.3f" % (run_epoch(data['test'], model))
+        # train and validate
+        print "Beginning training using %d threads..." % NUM_THREADS
+        last_valid = BIG_NUM
+        learning_rate = args.learning_rate
+        train_model.assign_lr(sess, learning_rate)
+        for epoch in xrange(args.nepochs):
+            print "Training epoch %d w/ learning rate %.3f..." % (epoch, learning_rate)
+            start_time = time.time()
+            train_loss = run_epoch(sess, data['train'], train_model, train_model.train)
+            valid_loss = run_epoch(sess, data['valid'], valid_model, tf.no_op())
+            duration = time.time() - start_time
+            print "\tloss = %.3f, valid ppl = %.3f, %.3f s" % \
+                (train_loss, valid_loss, duration)
+            if epoch >= 4:
+                learning_rate /= 2.
+                train_model.assign_lr(sess, learning_rate)
 
-    if args.visualize:
-        print "Visualizing embeddings"
-        visualize(args, embeddings)
+            '''
+            if last_valid < valid_loss:
+                "\tHalving learning rate"
+                learning_rate /= 2.
+                train_model.assign_lr(sess, learning_rate)
+            elif args.outfile:
+                saver.save(sess, args.outfile)
+            last_valid = valid_loss
+            '''
+
+        # test
+        print "Test perplexity: %.3f" % (run_epoch(sess, data['test'], valid_model, tf.no_op()))
+
+        if args.visualize:
+            print "Visualizing embeddings"
+            visualize(args, embeddings)
          
 if __name__ == '__main__':
     sys.exit(main(sys.argv[1:]))

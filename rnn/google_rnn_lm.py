@@ -190,7 +190,7 @@ class SmallConfig(object):
   max_max_epoch = 13
   keep_prob = 1.0
   lr_decay = 0.5
-  batch_size = 20
+  batch_size = 1024
   vocab_size = 10000
 
 
@@ -249,7 +249,6 @@ def run_epoch(session, m, data, eval_op, verbose=False):
   costs = 0.0
   iters = 0
   state = m.initial_state.eval()
-  pdb.set_trace()
   for step, (x, y) in enumerate(reader.ptb_iterator(data, m.batch_size,
                                                     m.num_steps)):
     # run number of batches / epoch
@@ -306,6 +305,7 @@ def main(_):
 
     tf.initialize_all_variables().run()
 
+    print("Batch size, seq_len", m.batch_size, m.num_steps)
     for i in range(config.max_max_epoch):
       lr_decay = config.lr_decay ** max(i - config.max_epoch, 0.0)
       m.assign_lr(session, config.learning_rate * lr_decay)
