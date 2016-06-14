@@ -5,12 +5,12 @@ import pdb
 class Model():
 
     def __init__(self, params, is_training=False):
-        self.batch_size = batch_size = params['batch_size']
-        self.seq_len = seq_len = params['seq_len']
-        self.vocab_size = vocab_size = params['vocab_size']
-        self.d_hid = d_hid = params['d_hid'] # also embedding dimension
+        batch_size = params['batch_size']
+        seq_len = params['seq_len']
+        vocab_size = params['vocab_size']
+        d_hid = params['d_hid'] # also embedding dimension
         self.nlayers = nlayers = params['nlayers']
-        self.drop_prob = drop_prob = params['drop_prob']
+        drop_prob = params['drop_prob']
         
         self._input_ph = tf.placeholder(tf.int32, shape=[None, seq_len]) # None can be any size
         self._target_ph = tf.placeholder(tf.int32, shape=[None, seq_len]) 

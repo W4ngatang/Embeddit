@@ -190,7 +190,7 @@ class SmallConfig(object):
   max_max_epoch = 13
   keep_prob = 1.0
   lr_decay = 0.5
-  batch_size = 1024
+  batch_size = 1023
   vocab_size = 10000
 
 
