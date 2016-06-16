@@ -71,6 +71,7 @@ flags.DEFINE_string(
     "model", "small",
     "A type of model. Possible options are: small, medium, large.")
 flags.DEFINE_string("data_path", None, "data_path")
+flags.DEFINE_bool("log_device", False, "True if log device used")
 
 FLAGS = flags.FLAGS
 
@@ -131,7 +132,7 @@ class PTBModel(object):
     loss = tf.nn.seq2seq.sequence_loss_by_example(
         [logits],
         [tf.reshape(self._targets, [-1])],
-        [tf.ones([batch_size * num_steps])]) # TODO wtf is this
+        [tf.ones([batch_size * num_steps])]) 
     self._cost = cost = tf.reduce_sum(loss) / batch_size
     self._final_state = state
 
@@ -190,7 +191,7 @@ class SmallConfig(object):
   max_max_epoch = 13
   keep_prob = 1.0
   lr_decay = 0.5
-  batch_size = 1023
+  batch_size = 20
   vocab_size = 10000
 
 
@@ -258,7 +259,7 @@ def run_epoch(session, m, data, eval_op, verbose=False):
                                   m.targets: y,
                                   m.initial_state: state})
     costs += cost
-    iters += m.num_steps    # need to divide cost by batch_size and num_steps (seq_len)
+    iters += m.num_steps    # need to divide cost by nbatches and num_steps (seq_len)
                             # already divided by batch_size in cost
 
     if verbose and step % (epoch_size // 10) == 10:
@@ -294,7 +295,7 @@ def main(_):
   eval_config.batch_size = 1
   eval_config.num_steps = 1
 
-  with tf.Graph().as_default(), tf.Session() as session:
+  with tf.Graph().as_default(), tf.Session(config=tf.ConfigProto(log_device_placement=FLAGS.log_device)) as session:
     initializer = tf.random_uniform_initializer(-config.init_scale,
                                                 config.init_scale)
     with tf.variable_scope("model", reuse=None, initializer=initializer):
@@ -306,6 +307,8 @@ def main(_):
     tf.initialize_all_variables().run()
 
     print("Batch size, seq_len", m.batch_size, m.num_steps)
+    valid_perplexity = run_epoch(session, mvalid, valid_data, tf.no_op())
+    print("Initial Valid Perplexity: %.3f" % (valid_perplexity))
     for i in range(config.max_max_epoch):
       lr_decay = config.lr_decay ** max(i - config.max_epoch, 0.0)
       m.assign_lr(session, config.learning_rate * lr_decay)

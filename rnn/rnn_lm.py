@@ -11,6 +11,7 @@ import math
 from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
 from data import Dataset
+from tensorflow.models.rnn.ptb import reader
 
 NUM_THREADS = 32
 BIG_NUM = 100000
@@ -30,7 +31,7 @@ def build_data(args):
                     'vocab_size':df['vocab_size'][0], 'd_hid':args.d_hid, \
                     'nlayers':args.nlayers, 'drop_prob':args.drop_prob, \
                     'model':args.model, 'init_scale':args.init_scale,
-                    'max_grad_norm':args.max_grad}
+                    'max_grad_norm':args.max_grad_norm}
     train_params = {'nepochs':args.nepochs, 'learning_rate':args.learning_rate,\
                     'decay_after':args.decay_after, 'decay_rate':args.decay_rate}
 
@@ -53,32 +54,20 @@ def build_data(args):
                 else:
                     raise ValueError("Unknown parameter %s" % arg)
 
-    # there has to be a better way to return parameters...
     return {'train':train, 'valid':valid, 'test':test}, model_params, train_params
 
 def run_epoch(sess, data, model, eval_op):
-    loss = 0
-    state = [] 
-    for c,m in model.initial_state: # initial_state: (c_i, m_i) * nlayers
-        state.append((c.eval(), m.eval()))
+    loss = 0.0
+    state = model.initial_state.eval()
     for i in xrange(data.nbatches):
-        fetches = [model.loss, eval_op]
-        for c,m in model.last_state:
-            fetches.append(c)
-            fetches.append(m)
+        x, y = data.batch(i)
+        batch_loss, state, _ = sess.run([model.loss, model.last_state, eval_op],
+                                    {model.input:x, model.targ:y, model.initial_state:state})
+        loss += batch_loss
+        #if steps % (epoch_size // 10) == 10:
+        #    print ".%.3f, perplexity: %.3f" % (steps * 1.0 / epoch_size, np.exp(loss/ steps))
 
-        input_batch, targ_batch = data.batch(i)
-        batch_d = {model.input:input_batch, model.targ:targ_batch}
-        for i, (c,m) in enumerate(model.initial_state):
-            batch_d[c], batch_d[m] = state[i] 
-
-        res = sess.run(fetches, batch_d)
-        loss += res[0]
-        state_flat = res[2:] # states returned flattened
-        state = [state_flat[i:i+model.nlayers] for i in \
-                    xrange(0, len(state_flat), model.nlayers)]
-
-    return math.exp(loss/data.nbatches)
+    return math.exp(loss/(data.nbatches*model.seq_len))
 
 def visualize(args, embeddings):
     with open(args.vocabfile, 'r') as f:
@@ -107,6 +96,7 @@ def main(arguments):
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--datafile', help='source data file', type=str)
+    parser.add_argument('--datapath', help='source data path', type=str)
     parser.add_argument('--outfile', help='file to save best model to', type=str, default='') # unused
     parser.add_argument('--modelfile', help='file to load model variable values from', type=str, default='') # unused
     parser.add_argument('--logfile', help='file to write progress to', type=str)
@@ -118,18 +108,17 @@ def main(arguments):
     parser.add_argument('--nlayers', help='number of layers of rnn', type=int, default=2)
     parser.add_argument('--drop_prob', help='probability of dropout', type=float, default=0.5)
     parser.add_argument('--init_scale', help='range to initialize over', type=float, default=.05)
-    parser.add_argument('--w2v', help='1 if load w2v vectors, 0 if no', type=int, default=0) # unused
 
     # Training parameters
     parser.add_argument('--learning_rate', help='initial learning rate', type=float, default=1.)
     parser.add_argument('--decay_after', help='number of epochs after which \
                                             to begin decaying learning rate. \
                                             If none, then halve learning rate if \
-                                            validation score increases between epochs. ', type=int, default=None)
+                                            validation score increases between epochs. ', type=int, default=-1)
     parser.add_argument('--decay_rate', help='rate to decay learning rate', type=float, default=1.2)
     parser.add_argument('--nepochs', help='number of epochs to train for', type=int, default=40)
     parser.add_argument('--grad_reg', help='type of gradient regularization', type=str, default='norm') # unused
-    parser.add_argument('--max_grad', help='maximum gradient value', type=float, default=5.)
+    parser.add_argument('--max_grad_norm', help='maximum gradient value', type=float, default=5.)
     parser.add_argument('--normalize', help='1 if normalize, 0 otherwise', type=int, default=0) # unused
 
     # Visualization
@@ -140,12 +129,13 @@ def main(arguments):
     if not args.datafile and args.logfile:
         raise ValueError("Must include path to data and logfile")
     lf = open(args.logfile, 'w')
-    log(lf, "Loading data...")
-    data, mp, tp = build_data(args)
-
     config = tf.ConfigProto(inter_op_parallelism_threads=NUM_THREADS,\
             intra_op_parallelism_threads=NUM_THREADS)
-    with tf.Graph().as_default(), tf.Session(config=config) as sess:
+#    with tf.Graph().as_default(), tf.Session(config=config) as sess:
+    with tf.Graph().as_default(), tf.Session() as sess:
+        log(lf, "Loading data...")
+        data, mp, tp = build_data(args)
+
         # get model, use train and valid models because of dropout
         log(lf, "Building model...") # TODO add saver
         initializer = tf.random_uniform_initializer(-mp['init_scale'], mp['init_scale'])
@@ -164,8 +154,10 @@ def main(arguments):
         last_valid = BIG_NUM
         learning_rate = tp['learning_rate']
         train_model.assign_lr(sess, learning_rate)
+        valid_loss = run_epoch(sess, data['valid'], valid_model, tf.no_op())
+        print 'Initial valid loss: %.3f' % valid_loss
         for epoch in xrange(tp['nepochs']):
-            log(lf, "Training epoch %d w/ learning rate %.3f..." % (epoch, learning_rate))
+            log(lf, "Training epoch %d w/ learning rate %.3f..." % (epoch+1, learning_rate))
             start_time = time.time()
             train_loss = run_epoch(sess, data['train'], train_model, train_model.train)
             valid_loss = run_epoch(sess, data['valid'], valid_model, tf.no_op())
@@ -173,10 +165,9 @@ def main(arguments):
             log(lf, "\tloss = %.3f, valid ppl = %.3f, %.3f s" % \
                 (train_loss, valid_loss, duration))
 
-            if tp['decay_after'] is not None:
-                if epoch >= tp['decay_after']:
-                    learning_rate /= tp['decay_rate']
-                    train_model.assign_lr(sess, learning_rate)
+            if tp['decay_after'] > 0 and epoch >= tp['decay_after'] - 1: # cuz 0-indexing
+                learning_rate /= tp['decay_rate']
+                train_model.assign_lr(sess, learning_rate)
             elif last_valid < valid_loss:
                 learning_rate /= 2.
                 train_model.assign_lr(sess, learning_rate)

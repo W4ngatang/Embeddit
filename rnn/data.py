@@ -13,7 +13,7 @@ class Dataset:
 
     def batch(self, i):
         return self.inputs[i], self.targets[i] if self.targets is not None \
-            else self.targets[i]
+            else self.inputs[i]
 
     # TODO 
     def shuffle(self):
