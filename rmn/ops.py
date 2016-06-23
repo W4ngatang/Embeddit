@@ -40,7 +40,7 @@ class ConcatRNN(tf.nn.rnn_cell.RNNCell):
 class Model():
 
     def __init__(self, params, is_training=False):
-        batch_size = params['batch_size']
+        batch_size = params['batch_size'] # DATA WILL BE ARRANGED IN BATCHES
         seq_len = params['seq_len']
         span_size = params['span_size'] # number of tokens per span
 
@@ -58,13 +58,13 @@ class Model():
         
         # how to do in batch? if it's a user-subreddit pair / network, then can't
         # do batch because need sequential -> lay out each user-subreddit pair sequentially
-        # TODO shapes
+        # TODO initializations
         # TODO dropout; masks?
         # TODO end of char x char token
-        self._span = tf.placeholder(tf.int32, shape=[None, seq_len, span_size])
-        self._negs = tf.placeholder(tf.int32, shape=[None, n_negs]) # negative samples for objective
-        self._user = tf.placeholder(tf.int32, shape=[None, seq_len, 2]) # two characters?
-        self._book = tf.placeholder(tf.int32, shape=[None, seq_len, 1])
+        self._span = tf.placeholder(tf.int32, shape=[None, span_size])
+        self._negs = tf.placeholder(tf.int32, shape=[n_negs, span_size]) 
+        self._user = tf.placeholder(tf.int32, shape=[2]) # two characters?
+        self._book = tf.placeholder(tf.int32, shape=[1])
 
         '''
         In each variable scope,
@@ -75,24 +75,24 @@ class Model():
         with tf.variable_scope("span"):
             # TODO load w2v
             lookup_table = tf.get_variable("lookup_table", [vocab_size, d_word], \
-                                            trainable=False) # batch x seq x span
-            word_embeds = tf.nn.embedding_lookup(lookup_table, self._span) # batch x seq x span x d_w
-            span_embed = tf.reduce_mean(word_embeds, 2) # batch x seq x d_word
+                                            trainable=False) # seq x span_size
+            word_embeds = tf.nn.embedding_lookup(lookup_table, self._span) # seq x span_size x d_w
+            span_embeds = tf.reduce_mean(word_embeds, 1) # seq x d_word
             W_w = tf.get_variable('W', [d_word, d_word])
             b_w = tf.get_variable('b', [d_word]) # initialzed to zero
-            lin_w = tf.matmul(W_w, span_embed) + biases
+            lin_w = tf.matmul(W_w, span_embeds) + b_w
 
         with tf.variable_scope("char"):
-            lookup_table = tf.get_variable("lookup_table", [nchars, d_char]) # batch x seq x 2
-            char_embeds = tf.nn.embedding_lookup(lookup_table, self._user) # batch x seq x 2 x d_char
-            shaped_char_embeds = tf.reduce_sum(char_embeds, [batch_size, -1]) # batch, seq, d_char
+            lookup_table = tf.get_variable("lookup_table", [nchars, d_char]) 
+            char_embeds = tf.nn.embedding_lookup(lookup_table, self._user)
+            shaped_char_embeds = tf.reduce_sum(char_embeds, [d_char, -1]) # d_char
             W_c = tf.get_variable('W', [d_char, d_word])
             lin_c = tf.matmul(W_c, shaped_char_embeds)
 
         with tf.variable_scope("book"):
             lookup_table = tf.get_variable("lookup_table", [nbooks, d_book]) # batch x seq
             book_embed = tf.nn.embedding_lookup(lookup_table, self._book) # batch x seq x d_b
-            W_b = tf.get_variable('W', [d_book, dword])
+            W_b = tf.get_variable('W', [d_book, d_word])
             lin_b = tf.matmul(W_b, book_embed)
 
         linear = lin_w + lin_c + lin_b
@@ -105,15 +105,17 @@ class Model():
             outputs, state = tf.nn.rnn(cell, all_embeds, dtype=tf.float32,\
                                     initial_state=self._initial_state)
         self._last_state = state
-        # Output shape should be batch_size x seq_len x d_word
-        outputs = tf.reshape(tf.concat(1, outputs), [-1, size])
+        # Output shape should be (seq_len x d_word)
+        outputs = tf.reshape(tf.concat(1, outputs), [-1, d_word])
 
         # reconstruction
         R = tf.get_variable("descriptor_dict", [ntopics, d_word])
-        reconstruct = tf.matmul(R, outputs)
+        recons = tf.matmul(R, outputs)
 
         # max-margin loss w/ similarity penalty
-        J = tf.ones() - tf.dot(span_embed, reconstruct) + tf.dot(neg_embed, reconstruct)
+        pos_vecs = tf.tile(tf.reduce_sum(tf.mul(span_embeds, recons), 1), [n_negs, 1])
+        neg_vecs = tf.matmul(neg_spans, tf.transpose(recons))
+        J = tf.reduce_sum(tf.max(0., 1. - pos_vecs + neg_vecs))
 
         # The true penalty I think is this, but they use the uncommented line
         #X = tf.sqrt(tf.reduce_sum(tf.square(tf.matmul(R, tf.transpose(R)) - identity)))

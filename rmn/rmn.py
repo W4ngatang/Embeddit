@@ -113,9 +113,9 @@ def main(arguments):
     parser.add_argument('--configfile', help='optional file to load model parameters from', type=str, default='')
 
     # Model parameters
-    parser.add_argument('--model', help='type of RNN', type=str, default='lstm')
-    parser.add_argument('--d_hid', help='hidden layer size', type=int, default=650)
-    parser.add_argument('--nlayers', help='number of layers of rnn', type=int, default=2)
+    parser.add_argument('--d_word', help='hidden layer size', type=int, default=650)
+    parser.add_argument('--d_char', help='hidden layer size', type=int, default=650)
+    parser.add_argument('--d_book', help='hidden layer size', type=int, default=650)
     parser.add_argument('--drop_prob', help='probability of dropout', type=float, default=0.5)
     parser.add_argument('--init_scale', help='range to initialize over', type=float, default=.05)
     parser.add_argument('--w2v', help='1 if load w2v vectors, 0 if no', type=int, default=0) # unused

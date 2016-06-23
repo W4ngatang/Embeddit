@@ -88,7 +88,6 @@ def build_embeds(vec_file, vocab):
 
 def build_data(srcs, word2ind, gram_size):
     datafiles = srcs.split(',')
-    freqs = defaultdict(int) 
     all_inputs = []
     all_targs = []
     for i, datafile in enumerate(datafiles):
