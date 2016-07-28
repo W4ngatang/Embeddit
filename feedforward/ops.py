@@ -4,7 +4,7 @@ import pdb
 
 # model: softmax(W2*tanh(W1*x)) where x are embeddings
 def model(inputs, params, pretrain=None):
-    n = params['gram_size'] - 1 # -1 to get shape of context
+    n = params['gram_size'] #- 1 # -1 to get shape of context
     V = params['vocab_size']
     d_emb = params['emb_size']
     d_hid = params['hid_size']
@@ -21,6 +21,8 @@ def model(inputs, params, pretrain=None):
 
     norm = tf.sqrt(tf.reduce_sum(tf.square(embeddings), 1, keep_dims=True))
     normalized = embeddings / norm
+    # ops to normalize embeddings
+    normalize = embeddings.assign(normalized)
 
     embeds = tf.nn.embedding_lookup(normalized, inputs) 
     reshape = tf.reshape(embeds, [-1, n*d_emb], name='reshape')
@@ -36,10 +38,6 @@ def model(inputs, params, pretrain=None):
         linear2 = tf.matmul(activation, weights)+biases
         vars += [weights, biases]
 
-    # ops to normalize embeddings
-    norm = tf.sqrt(tf.reduce_sum(tf.square(embeddings), 1, keep_dims=True))
-    normalized = embeddings / norm
-    normalize = embeddings.assign(normalized)
     return linear2, normalize, vars
 
 # takes in logits (pre-softmax normalized scores)

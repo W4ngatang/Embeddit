@@ -23,10 +23,10 @@ class MyEmbeddingLayer(lasagne.layers.Layer):
 
 # compute vector average
 class AverageLayer(lasagne.layers.MergeLayer):
-    def __init__(self, incomings, d, **kwargs):
+    def __init__(self, incomings, d, no_average, **kwargs):
         super(AverageLayer, self).__init__(incomings, **kwargs)
         self.d = d
-        self.sum = True
+        self.sum =  no_average # TODO should this be false??
 
     def get_output_for(self, inputs, **kwargs):
         emb_sums = T.sum(inputs[0] * inputs[1][:, :, None], axis=1)
@@ -40,6 +40,24 @@ class AverageLayer(lasagne.layers.MergeLayer):
     def get_output_shape_for(self, input_shapes):
         return (None, self.d)
 
+# computes vector average minus an offset
+class AverageLayerWithOffset(lasagne.layers.MergeLayer):
+    def __init__(self, incomings, d, no_average, **kwargs):
+        super(AverageLayer, self).__init__(incomings, **kwargs)
+        self.d = d
+        self.sum = no_average
+
+    def get_output_for(self, inputs, **kwargs):
+        emb_sums = T.sum(inputs[0] * inputs[1][:, :, None], axis=1)
+        if self.sum:
+            return emb_sums - inputs[2]
+        else:
+            mask_sums = T.sum(inputs[1], axis=1)
+            return (emb_sums / mask_sums[:,None]) - inputs[2]
+
+    # batch_size x max_spans x d
+    def get_output_shape_for(self, input_shapes):
+        return (None, self.d)
 
 # multiply recurrent hidden states with descriptor matrix R
 class ReconLayer(lasagne.layers.Layer):
@@ -84,11 +102,32 @@ class MixingLayer(lasagne.layers.MergeLayer):
     def get_output_shape_for(self, input_shapes):
         return (None, self.d)
 
+# mix word embeddings with global character/book embeddings
+class MixingLayerNoBook(lasagne.layers.MergeLayer):
+    def __init__(self, incomings, d, d_char, **kwargs):
+        super(MixingLayer, self).__init__(incomings, **kwargs)
+        self.d = d
+        self.W_m = self.add_param(lasagne.init.GlorotUniform(), 
+            (d, d), name='W_m')
+        self.b_m = self.add_param(lasagne.init.Constant(0), 
+            (d,), name='b_m')
+        self.W_char = self.add_param(lasagne.init.GlorotUniform(), 
+            (d, d_char), name='W_char') 
+        self.f = lasagne.nonlinearities.rectify
+
+    def get_output_for(self, inputs, **kwargs):
+        spanvec = T.dot(inputs[0], self.W_m) + self.b_m
+        cvec = T.dot(self.W_char, T.sum(inputs[1], axis=0))
+        return self.f(spanvec + cvec[None, :])
+
+    # num_spans, self.d
+    def get_output_shape_for(self, input_shapes):
+        return (None, self.d)
 
 # recurrent layer with linear interpolation
 class RecurrentRelationshipLayer(lasagne.layers.Layer):
     def __init__(self, incoming, d_word, 
-        d_hidden, num_descs, **kwargs):
+        num_descs, **kwargs):
 
         super(RecurrentRelationshipLayer, self).__init__(incoming, **kwargs)
         self.W = self.add_param(lasagne.init.GlorotUniform(), 
@@ -97,7 +136,6 @@ class RecurrentRelationshipLayer(lasagne.layers.Layer):
             (num_descs, num_descs), name='W2_arch')
 
         self.d_word = d_word
-        self.d_hidden = d_hidden
         self.num_descs = num_descs
         self.alpha = 0.5
         self.f = lasagne.nonlinearities.softmax

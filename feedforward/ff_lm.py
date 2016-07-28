@@ -16,7 +16,7 @@ NUM_THREADS = 32
 
 def build_data(args):
     datafile = h5py.File(args.datafile, 'r')
-    train_inputs = datafile['train_inputs']
+    train_inputs = datafile['train_inputs'] # TODO stupid file name 
     train_targs = datafile['train_targets']
     valid_inputs = datafile['valid_inputs']
     valid_targs = datafile['valid_targets']
@@ -42,23 +42,23 @@ def train(args, data, params):
     learning_rate = args.learning_rate
 
     with tf.Graph().as_default():
-        input_ph = tf.placeholder(tf.int32, shape=[args.batch_size,params['gram_size']-1])
+        input_ph = tf.placeholder(tf.int32, shape=[args.batch_size,params['gram_size']])
         targ_ph = tf.placeholder(tf.int32, shape=[args.batch_size])
         learning_rate_ph = tf.placeholder(tf.float32, shape=[])
 
         if args.w2v:
-            with h5py.File(args.datafile, 'r') as datafile:
-                embeds = datafile['embeds'][:]   
-            scores, normalize_op = ops.model(input_ph, params, embeds)
+            with h5py.File(args.w2v, 'r') as datafile:
+                embeds = datafile['w2v'][:]   
+            scores, normalize_op, vars = ops.model(input_ph, params, embeds)
         else:
             scores, normalize_op, vars = ops.model(input_ph, params)
         
         loss = ops.loss(scores, targ_ph)
         train_op, print_op = ops.train(loss, learning_rate_ph, args)
-        last_valid = 1000000 # big number
 
-        sess = tf.Session(config=tf.ConfigProto(inter_op_parallelism_threads=NUM_THREADS,\
-				intra_op_parallelism_threads=NUM_THREADS))
+        #sess = tf.Session(config=tf.ConfigProto(inter_op_parallelism_threads=NUM_THREADS,\
+		#		intra_op_parallelism_threads=NUM_THREADS))
+        sess = tf.Session()
         init = tf.initialize_all_variables() # initialize variables before they can be used
         saver = tf.train.Saver()
         sess.run(init)
@@ -71,6 +71,7 @@ def train(args, data, params):
             valid_feed_dict = get_feed_dict(valid, i, input_ph, targ_ph, learning_rate_ph)
             batch_loss = sess.run([loss], feed_dict=valid_feed_dict)[0]
             valid_loss += batch_loss
+        last_valid = valid_loss
         print 'Initial valid loss: %.3f' % math.exp(valid_loss/valid.nbatches)
 
         for epoch in xrange(args.nepochs):
@@ -103,6 +104,8 @@ def train(args, data, params):
                 learning_rate /= 2.
             elif args.outfile:
                 saver.save(sess, args.outfile)
+            if epoch >= args.decay_after:
+                learning_rate /= 1.2
             last_valid = valid_loss
         
         return sess.run([normalize_op])[0] # return final normalized embeddings
@@ -131,18 +134,19 @@ def main(arguments):
     parser.add_argument('--datafile', help='source data file', type=str)
     parser.add_argument('--outfile', help='file to save best model to', type=str, default='')
     parser.add_argument('--modelfile', help='file to load model variable values from', type=str, default='')
-    parser.add_argument('--batch_size', help='batch_size', type=int)
+    parser.add_argument('--batch_size', help='batch_size', type=int, default=32)
     parser.add_argument('--learning_rate', help='initial learning rate', type=float, default=1.)
-    parser.add_argument('--nepochs', help='number of epochs to train for', type=int)
+    parser.add_argument('--nepochs', help='number of epochs to train for', type=int, default=20)
+    parser.add_argument('--decay_after', help='number of epochs after which to decay', type=int, default=10)
     parser.add_argument('--d_hid', help='hidden layer size', type=int, default=100)
-    parser.add_argument('--d_emb', help='embedding size', type=int, default=30)
+    parser.add_argument('--d_emb', help='embedding size', type=int, default=300)
     parser.add_argument('--grad_reg', help='type of gradient regularization (either norm or clip)', type=str, default='')
     parser.add_argument('--max_grad', help='maximum gradient value', type=float, default=5.)
     parser.add_argument('--normalize', help='1 if normalize, 0 otherwise', type=int, default=0)
-    parser.add_argument('--w2v', help='1 if load w2v vectors, 0 if no', type=int, default=0)
+    parser.add_argument('--w2v', help='path to word2vec', type=str, default='')
+    parser.add_argument('--embedfile', help='path to write trained embeddings to', type=str, default='')
     parser.add_argument('--visualize', help='1 if visualize, 0 otherwise', type=int, default=0)
     parser.add_argument('--vocabfile', help='path to pickle file containing vocabulary', type=str)
-    # want to potentially save input data as pickle, write vocab
     args = parser.parse_args(arguments)
 
     # load data and model parameters
@@ -153,6 +157,10 @@ def main(arguments):
     print "Training using %d threads..." % NUM_THREADS
     if args.grad_reg: print "\tUsing gradient %s" % args.grad_reg
     embeddings = train(args, d, p)
+
+    if args.embedfile:
+        with h5py.File(args.embedfile, 'w') as f:
+            f['w2v'] = embeddings
 
     if args.visualize:
         print "Visualizing embeddings"
