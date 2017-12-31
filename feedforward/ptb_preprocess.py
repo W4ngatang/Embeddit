@@ -9,7 +9,8 @@ import re
 
 def build_vocab(args, special=['<eos>', '<unk>', 'N']):
     print "Generating vocab..."
-    datafiles = [args.srcpath + d for d in ['.train.txt', '.valid.txt', '.test.txt']]
+    datafiles = [args.srcpath + d for d in ['train.txt', 'valid.txt']]
+        #,'.test.txt']]
     freqs = defaultdict(int) 
     for i, datafile in enumerate(datafiles):
         print "\tProcessing datafile %d of %d..." % (i+1, len(datafiles))
@@ -119,18 +120,18 @@ def main(arguments):
         embeds = build_embeds(args.w2v, word2ind)
 
     print "Generating train data..."
-    tr_inputs, tr_targs = build_data(args.srcpath+'.train.txt', word2ind, args.n-1) 
+    tr_inputs, tr_targs = build_data(args.srcpath+'train.txt', word2ind, args.n-1) 
     print "Generating valid data..."
-    va_inputs, va_targs = build_data(args.srcpath+'.valid.txt', word2ind, args.n-1)
+    va_inputs, va_targs = build_data(args.srcpath+'valid.txt', word2ind, args.n-1)
     print "Generating test data..."
-    te_inputs, te_targs = build_data(args.srcpath+'.test.txt', word2ind, args.n-1)
+    #te_inputs, te_targs = build_data(args.srcpath+'.test.txt', word2ind, args.n-1)
     with h5py.File(args.outfile + '.hdf5') as f:
         f['train_inputs'] = tr_inputs
         f['train_targets'] = tr_targs
         f['valid_inputs'] = va_inputs
         f['valid_targets'] = va_targs
-        f['test_inputs'] = te_targs
-        f['test_targets'] = te_targs
+        #f['test_inputs'] = te_targs
+        #f['test_targets'] = te_targs
         f['gram_size'] = np.array([args.n], dtype=np.int32)
         f['vocab_size'] = np.array([len(word2ind)], dtype=np.int32)
         if args.w2v:

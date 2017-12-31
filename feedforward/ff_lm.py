@@ -8,11 +8,11 @@ import pdb
 import time
 import ops
 import math
-from sklearn.manifold import TSNE
-import matplotlib.pyplot as plt
+#from sklearn.manifold import TSNE
+#import matplotlib.pyplot as plt
 from data import Dataset
 
-NUM_THREADS = 32
+NUM_THREADS = 1
 
 def build_data(args):
     datafile = h5py.File(args.datafile, 'r')
@@ -23,7 +23,7 @@ def build_data(args):
     train = Dataset(train_inputs, train_targs, args.batch_size)
     valid = Dataset(valid_inputs, valid_targs, args.batch_size)
     return {'train':train, 'valid':valid}, \
-            {'gram_size':datafile['gram_size'][0], 'vocab_size':datafile['vocab_size'][0], \
+            {'gram_size':datafile['gram_size'][0] - 1, 'vocab_size':datafile['vocab_size'][0], \
                 'hid_size':args.d_hid, 'emb_size':args.d_emb}
 
 def get_feed_dict(data, i, input_ph, targ_ph, learning_rate_ph, learning_rate=0.):
